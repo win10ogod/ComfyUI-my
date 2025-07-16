@@ -1,6 +1,10 @@
 from __future__ import annotations
 from .k_diffusion import sampling as k_diffusion_sampling
 from .extra_samplers import uni_pc
+from .yana_sampler import sample_yana
+from .yana_plus_sampler import sample_yana_plus
+from .isdo_sampler import sample_isdo
+from .fshores_sampler import sample_fshores
 from typing import TYPE_CHECKING, Callable, NamedTuple
 if TYPE_CHECKING:
     from comfy.model_patcher import ModelPatcher
@@ -720,7 +724,9 @@ KSAMPLER_NAMES = ["euler", "euler_cfg_pp", "euler_ancestral", "euler_ancestral_c
                   "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_2s_ancestral_cfg_pp", "dpmpp_sde", "dpmpp_sde_gpu",
                   "dpmpp_2m", "dpmpp_2m_cfg_pp", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm",
                   "ipndm", "ipndm_v", "deis", "res_multistep", "res_multistep_cfg_pp", "res_multistep_ancestral", "res_multistep_ancestral_cfg_pp",
-                  "gradient_estimation", "gradient_estimation_cfg_pp", "er_sde", "seeds_2", "seeds_3", "sa_solver", "sa_solver_pece"]
+                  "gradient_estimation", "gradient_estimation_cfg_pp", "er_sde", "seeds_2", "seeds_3", "sa_solver", "sa_solver_pece", 
+                  "yana", "yana_plus", "isdo", "fshores"
+               ]
 
 class KSAMPLER(Sampler):
     def __init__(self, sampler_function, extra_options={}, inpaint_options={}):
@@ -772,6 +778,12 @@ def ksampler(sampler_name, extra_options={}, inpaint_options={}):
                 sigma_min = sigmas[-2]
             return k_diffusion_sampling.sample_dpm_adaptive(model, noise, sigma_min, sigmas[0], extra_args=extra_args, callback=callback, disable=disable, **extra_options)
         sampler_function = dpm_adaptive_function
+    elif sampler_name == "yana":
+        sampler_function = sample_yana
+    elif sampler_name == "yana_plus":
+        sampler_function = sample_yana_plus
+    elif sampler_name == "isdo":
+        sampler_function = sample_isdo
     else:
         sampler_function = getattr(k_diffusion_sampling, "sample_{}".format(sampler_name))
 
@@ -1033,7 +1045,7 @@ def sample(model, noise, positive, negative, cfg, device, sampler, sigmas, model
     return cfg_guider.sample(noise, latent_image, sampler, sigmas, denoise_mask, callback, disable_pbar, seed)
 
 
-SAMPLER_NAMES = KSAMPLER_NAMES + ["ddim", "uni_pc", "uni_pc_bh2"]
+SAMPLER_NAMES = KSAMPLER_NAMES + ["ddim", "uni_pc", "uni_pc_bh2", "isdo"]
 
 class SchedulerHandler(NamedTuple):
     handler: Callable[..., torch.Tensor]
@@ -1072,6 +1084,14 @@ def sampler_object(name):
         sampler = KSAMPLER(uni_pc.sample_unipc_bh2)
     elif name == "ddim":
         sampler = ksampler("euler", inpaint_options={"random": True})
+    elif name == "yana":
+        sampler = KSAMPLER(sample_yana)
+    elif name == "yana_plus":
+        sampler = KSAMPLER(sample_yana_plus)
+    elif name == "isdo":
+        sampler = KSAMPLER(sample_isdo, extra_options={"max_correction_strength": 0.5, "perturbation_angle": 2.0})
+    elif name == "fshores":
+        sampler = KSAMPLER(sample_fshores)
     else:
         sampler = ksampler(name)
     return sampler

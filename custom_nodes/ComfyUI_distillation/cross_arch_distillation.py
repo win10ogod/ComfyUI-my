@@ -1310,6 +1310,295 @@ class DistillationPreview:
         )
 
 
+class SaveLoRA:
+    """Save LoRA weights to file in various formats."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "lora": ("LORA",),
+                "filename": ("STRING", {"default": "distilled_lora"}),
+                "format": (["safetensors", "pytorch", "peft"],),
+            },
+            "optional": {
+                "lora_alpha": ("INT", {"default": 64, "min": 1, "max": 512}),
+                "add_metadata": ("BOOLEAN", {"default": True}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("filepath",)
+    FUNCTION = "save"
+    CATEGORY = "distillation"
+    OUTPUT_NODE = True
+
+    def save(
+        self,
+        lora,
+        filename,
+        format="safetensors",
+        lora_alpha=64,
+        add_metadata=True,
+    ):
+        output_dir = folder_paths.get_output_directory()
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Handle different input types
+        if isinstance(lora, dict):
+            lora_sd = lora
+        elif hasattr(lora, "state_dict"):
+            lora_sd = lora.state_dict()
+        else:
+            lora_sd = dict(lora)
+
+        # Determine format and filename
+        if format == "peft":
+            # Save in PEFT format (directory with config)
+            peft_dir = os.path.join(output_dir, filename)
+            os.makedirs(peft_dir, exist_ok=True)
+
+            # Convert keys to PEFT format if needed
+            peft_sd = {}
+            target_modules = set()
+            ranks = []
+
+            for key, tensor in lora_sd.items():
+                if "lora_A" in key or "lora_B" in key:
+                    # Already in LoRA format
+                    if not key.startswith("base_model.model."):
+                        new_key = f"base_model.model.{key}"
+                    else:
+                        new_key = key
+                    peft_sd[new_key] = tensor.half() if tensor.dtype == torch.float32 else tensor
+
+                    # Extract module name
+                    parts = key.replace("base_model.model.", "").split(".")
+                    if len(parts) >= 2:
+                        target_modules.add(parts[-2] if "lora" in parts[-1] else parts[-1])
+
+                    # Track rank
+                    if "lora_A" in key:
+                        ranks.append(tensor.shape[0])
+                    elif "lora_B" in key:
+                        ranks.append(tensor.shape[1])
+                else:
+                    # Raw weight - try to add as-is
+                    peft_sd[key] = tensor
+
+            # Save weights
+            weight_path = os.path.join(peft_dir, "adapter_model.safetensors")
+            if HAS_SAFETENSORS:
+                save_file(peft_sd, weight_path)
+            else:
+                weight_path = os.path.join(peft_dir, "adapter_model.bin")
+                torch.save(peft_sd, weight_path)
+
+            # Determine rank
+            rank = int(np.median(ranks)) if ranks else 64
+
+            # Save config
+            config = {
+                "r": rank,
+                "lora_alpha": lora_alpha,
+                "lora_dropout": 0.0,
+                "target_modules": list(target_modules) if target_modules else ["q_proj", "k_proj", "v_proj", "o_proj"],
+                "bias": "none",
+                "task_type": "CAUSAL_LM",
+                "peft_type": "LORA",
+            }
+            config_path = os.path.join(peft_dir, "adapter_config.json")
+            with open(config_path, "w") as f:
+                json.dump(config, f, indent=2)
+
+            filepath = peft_dir
+
+        elif format == "safetensors":
+            filepath = os.path.join(output_dir, f"{filename}.safetensors")
+
+            # Prepare state dict
+            save_sd = {}
+            for key, tensor in lora_sd.items():
+                save_sd[key] = tensor.half() if tensor.dtype == torch.float32 else tensor
+
+            if HAS_SAFETENSORS:
+                metadata = {}
+                if add_metadata:
+                    metadata = {
+                        "format": "lora",
+                        "lora_alpha": str(lora_alpha),
+                    }
+                save_file(save_sd, filepath, metadata=metadata)
+            else:
+                # Fallback to pytorch
+                filepath = filepath.replace(".safetensors", ".pt")
+                torch.save(save_sd, filepath)
+
+        else:  # pytorch
+            filepath = os.path.join(output_dir, f"{filename}.pt")
+            save_sd = {}
+            for key, tensor in lora_sd.items():
+                save_sd[key] = tensor
+            torch.save(save_sd, filepath)
+
+        return (filepath,)
+
+
+class LoadLoRA:
+    """Load LoRA weights from file."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        lora_files = folder_paths.get_filename_list("loras")
+        return {
+            "required": {
+                "lora_name": (lora_files,),
+            },
+        }
+
+    RETURN_TYPES = ("LORA",)
+    RETURN_NAMES = ("lora",)
+    FUNCTION = "load"
+    CATEGORY = "distillation"
+
+    def load(self, lora_name):
+        lora_path = folder_paths.get_full_path("loras", lora_name)
+
+        if lora_path.endswith(".safetensors") and HAS_SAFETENSORS:
+            lora_sd = load_file(lora_path)
+        else:
+            lora_sd = torch.load(lora_path, map_location="cpu")
+
+        return (lora_sd,)
+
+
+class ApplyLoRAToModel:
+    """Apply LoRA weights to a model."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("MODEL",),
+                "lora": ("LORA",),
+                "strength": ("FLOAT", {"default": 1.0, "min": -2.0, "max": 2.0, "step": 0.01}),
+            },
+        }
+
+    RETURN_TYPES = ("MODEL",)
+    RETURN_NAMES = ("model",)
+    FUNCTION = "apply"
+    CATEGORY = "distillation"
+
+    def apply(self, model, lora, strength):
+        if strength == 0:
+            return (model,)
+
+        # Clone model
+        model_lora = model.clone()
+
+        # Get model state dict keys
+        model_sd = model.model.diffusion_model.state_dict()
+
+        # Apply LoRA patches
+        lora_sd = lora if isinstance(lora, dict) else dict(lora)
+
+        for key in lora_sd:
+            if "lora_A" not in key:
+                continue
+
+            # Find corresponding lora_B
+            lora_a_key = key
+            lora_b_key = key.replace("lora_A", "lora_B")
+
+            if lora_b_key not in lora_sd:
+                continue
+
+            lora_A = lora_sd[lora_a_key]
+            lora_B = lora_sd[lora_b_key]
+
+            # Find base weight key
+            base_key = key.replace(".lora_A.weight", ".weight")
+            base_key = base_key.replace(".lora_A", ".weight")
+            base_key = base_key.replace("base_model.model.", "")
+
+            if base_key not in model_sd:
+                # Try alternative key formats
+                alt_key = base_key.replace("_", ".")
+                if alt_key not in model_sd:
+                    continue
+                base_key = alt_key
+
+            # Create patch: delta = lora_B @ lora_A * strength
+            # ComfyUI model patcher format
+            model_lora.add_patches(
+                patches={base_key: (lora_A, lora_B)},
+                strength_patch=strength,
+            )
+
+        return (model_lora,)
+
+
+class MergeLoRAs:
+    """Merge multiple LoRA weights."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "lora_1": ("LORA",),
+                "lora_2": ("LORA",),
+                "weight_1": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05}),
+            },
+            "optional": {
+                "merge_method": (["weighted_average", "ties", "dare"],),
+            },
+        }
+
+    RETURN_TYPES = ("LORA",)
+    RETURN_NAMES = ("merged_lora",)
+    FUNCTION = "merge"
+    CATEGORY = "distillation"
+
+    def merge(self, lora_1, lora_2, weight_1, merge_method="weighted_average"):
+        lora_1_sd = lora_1 if isinstance(lora_1, dict) else dict(lora_1)
+        lora_2_sd = lora_2 if isinstance(lora_2, dict) else dict(lora_2)
+
+        weight_2 = 1.0 - weight_1
+        merged = {}
+
+        all_keys = set(lora_1_sd.keys()) | set(lora_2_sd.keys())
+
+        for key in all_keys:
+            t1 = lora_1_sd.get(key)
+            t2 = lora_2_sd.get(key)
+
+            if t1 is None:
+                merged[key] = t2 * weight_2
+            elif t2 is None:
+                merged[key] = t1 * weight_1
+            else:
+                if t1.shape != t2.shape:
+                    # Shape mismatch - use larger weight's tensor
+                    merged[key] = t1 if weight_1 >= weight_2 else t2
+                else:
+                    if merge_method == "weighted_average":
+                        merged[key] = t1 * weight_1 + t2 * weight_2
+                    elif merge_method == "ties":
+                        # Simple TIES: keep by magnitude
+                        mask = t1.abs() >= t2.abs()
+                        merged[key] = torch.where(mask, t1, t2)
+                    elif merge_method == "dare":
+                        # DARE: drop and rescale
+                        combined = t1 * weight_1 + t2 * weight_2
+                        drop_mask = torch.rand_like(combined) > 0.5
+                        merged[key] = combined * drop_mask * 2.0
+                    else:
+                        merged[key] = t1 * weight_1 + t2 * weight_2
+
+        return (merged,)
+
+
 # =============================================================================
 #                        NODE REGISTRATION
 # =============================================================================
@@ -1322,6 +1611,10 @@ NODE_CLASS_MAPPINGS = {
     "QuickDistillation": QuickDistillation,
     "LatentSpaceAdapter": LatentSpaceAdapter,
     "DistillationPreview": DistillationPreview,
+    "SaveLoRA": SaveLoRA,
+    "LoadLoRADistill": LoadLoRA,
+    "ApplyLoRAToModel": ApplyLoRAToModel,
+    "MergeLoRAs": MergeLoRAs,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1332,4 +1625,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "QuickDistillation": "Quick Distillation (SVD)",
     "LatentSpaceAdapter": "Latent Space Adapter",
     "DistillationPreview": "Distillation Preview",
+    "SaveLoRA": "Save LoRA",
+    "LoadLoRADistill": "Load LoRA (Distillation)",
+    "ApplyLoRAToModel": "Apply LoRA to Model",
+    "MergeLoRAs": "Merge LoRAs",
 }

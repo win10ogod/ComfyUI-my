@@ -1,0 +1,515 @@
+{
+  "last_node_id": 12,
+  "last_link_id": 14,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "LoadModelForDistillation",
+      "pos": [100, 100],
+      "size": {"0": 315, "1": 130},
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [1],
+          "slot_index": 0
+        },
+        {
+          "name": "ARCH_INFO",
+          "type": "ARCH_INFO",
+          "links": [2],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadModelForDistillation"
+      },
+      "widgets_values": [
+        "teacher_model.safetensors",
+        "auto"
+      ],
+      "title": "Load Teacher Model"
+    },
+    {
+      "id": 2,
+      "type": "LoadModelForDistillation",
+      "pos": [100, 300],
+      "size": {"0": 315, "1": 130},
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [3],
+          "slot_index": 0
+        },
+        {
+          "name": "ARCH_INFO",
+          "type": "ARCH_INFO",
+          "links": [4],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadModelForDistillation"
+      },
+      "widgets_values": [
+        "student_model.safetensors",
+        "auto"
+      ],
+      "title": "Load Student Model"
+    },
+    {
+      "id": 3,
+      "type": "ArchitectureAnalyzer",
+      "pos": [500, 100],
+      "size": {"0": 250, "1": 100},
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "ARCH_INFO",
+          "type": "ARCH_INFO",
+          "links": [5],
+          "slot_index": 0
+        },
+        {
+          "name": "INFO_STRING",
+          "type": "STRING",
+          "links": [6],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ArchitectureAnalyzer"
+      },
+      "title": "Analyze Teacher Architecture"
+    },
+    {
+      "id": 4,
+      "type": "ArchitectureAnalyzer",
+      "pos": [500, 300],
+      "size": {"0": 250, "1": 100},
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "ARCH_INFO",
+          "type": "ARCH_INFO",
+          "links": [7],
+          "slot_index": 0
+        },
+        {
+          "name": "INFO_STRING",
+          "type": "STRING",
+          "links": [8],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ArchitectureAnalyzer"
+      },
+      "title": "Analyze Student Architecture"
+    },
+    {
+      "id": 5,
+      "type": "CrossArchDistillation",
+      "pos": [850, 150],
+      "size": {"0": 350, "1": 350},
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "teacher_model",
+          "type": "MODEL",
+          "link": 1
+        },
+        {
+          "name": "student_model",
+          "type": "MODEL",
+          "link": 3
+        },
+        {
+          "name": "teacher_arch",
+          "type": "ARCH_INFO",
+          "link": 5
+        },
+        {
+          "name": "student_arch",
+          "type": "ARCH_INFO",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "DISTILLED_MODEL",
+          "type": "MODEL",
+          "links": [9],
+          "slot_index": 0
+        },
+        {
+          "name": "LORA",
+          "type": "LORA",
+          "links": [10],
+          "slot_index": 1
+        },
+        {
+          "name": "STATS",
+          "type": "STRING",
+          "links": [11],
+          "slot_index": 2
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CrossArchDistillation"
+      },
+      "widgets_values": [
+        64,
+        1.0,
+        0.95,
+        8,
+        256,
+        "attention,mlp",
+        100,
+        "aurora",
+        true,
+        0.3
+      ],
+      "title": "Cross-Architecture Distillation (AURORA-SVD)"
+    },
+    {
+      "id": 6,
+      "type": "ExtractLoRAFromDistillation",
+      "pos": [1300, 100],
+      "size": {"0": 300, "1": 150},
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "distilled_model",
+          "type": "MODEL",
+          "link": 9
+        },
+        {
+          "name": "base_model",
+          "type": "MODEL",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LORA",
+          "type": "LORA",
+          "links": [12],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ExtractLoRAFromDistillation"
+      },
+      "widgets_values": [
+        64,
+        0.95,
+        "pissa"
+      ],
+      "title": "Extract LoRA (PiSSA)"
+    },
+    {
+      "id": 7,
+      "type": "UniversalCrossArchDistill",
+      "pos": [850, 550],
+      "size": {"0": 380, "1": 400},
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "teacher_model",
+          "type": "MODEL",
+          "link": null
+        },
+        {
+          "name": "student_model",
+          "type": "MODEL",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "DISTILLED_MODEL",
+          "type": "MODEL",
+          "links": [],
+          "slot_index": 0
+        },
+        {
+          "name": "LORA_A",
+          "type": "TENSOR",
+          "links": [],
+          "slot_index": 1
+        },
+        {
+          "name": "LORA_B",
+          "type": "TENSOR",
+          "links": [],
+          "slot_index": 2
+        },
+        {
+          "name": "STATS",
+          "type": "STRING",
+          "links": [],
+          "slot_index": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UniversalCrossArchDistill"
+      },
+      "widgets_values": [
+        "SDXL",
+        "FLUX",
+        64,
+        64,
+        1.0,
+        "aurora",
+        2,
+        0.5,
+        0.25,
+        true,
+        0.95,
+        8,
+        256,
+        true,
+        0.3,
+        false,
+        0.3
+      ],
+      "title": "Universal Cross-Arch Distillation (SDXL→FLUX)"
+    },
+    {
+      "id": 8,
+      "type": "StyleDistillation",
+      "pos": [1300, 550],
+      "size": {"0": 350, "1": 300},
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source_model",
+          "type": "MODEL",
+          "link": null
+        },
+        {
+          "name": "target_model",
+          "type": "MODEL",
+          "link": null
+        },
+        {
+          "name": "style_images",
+          "type": "IMAGE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STYLED_MODEL",
+          "type": "MODEL",
+          "links": [],
+          "slot_index": 0
+        },
+        {
+          "name": "STYLE_LORA",
+          "type": "LORA",
+          "links": [],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "StyleDistillation"
+      },
+      "widgets_values": [
+        32,
+        0.7,
+        100,
+        "attention",
+        true,
+        0.001
+      ],
+      "title": "Style Transfer Distillation"
+    },
+    {
+      "id": 9,
+      "type": "QuickDistillation",
+      "pos": [100, 550],
+      "size": {"0": 350, "1": 250},
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "teacher_model",
+          "type": "MODEL",
+          "link": null
+        },
+        {
+          "name": "student_model",
+          "type": "MODEL",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "DISTILLED_MODEL",
+          "type": "MODEL",
+          "links": [],
+          "slot_index": 0
+        },
+        {
+          "name": "LORA",
+          "type": "LORA",
+          "links": [],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "QuickDistillation"
+      },
+      "widgets_values": [
+        64,
+        "auto",
+        0.95,
+        "aurora"
+      ],
+      "title": "Quick Distillation (One-Click)"
+    },
+    {
+      "id": 10,
+      "type": "ArchitectureInfo",
+      "pos": [500, 550],
+      "size": {"0": 280, "1": 150},
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "arch_type",
+          "type": "STRING",
+          "links": [],
+          "slot_index": 0
+        },
+        {
+          "name": "info_dict",
+          "type": "DICT",
+          "links": [],
+          "slot_index": 1
+        },
+        {
+          "name": "summary",
+          "type": "STRING",
+          "links": [],
+          "slot_index": 2
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ArchitectureInfo"
+      },
+      "title": "Get Architecture Info"
+    },
+    {
+      "id": 11,
+      "type": "Note",
+      "pos": [100, 800],
+      "size": {"0": 600, "1": 300},
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "properties": {},
+      "widgets_values": [
+        "=== ComfyUI Distillation Nodes Usage Guide ===\n\nSVD Backends Available:\n- aurora: AURORA-SVD (best quality, recommended)\n- drf: DRF-SVD (Dual-Residual Folding)\n- randomized: Halko et al. Algorithm 4.4\n- krylov: Block Krylov subspace\n- adaptive: Adaptive range finder\n- auto: Automatic selection based on matrix size\n\nKey Parameters:\n- rank: LoRA rank (8-256, default: 64)\n- energy_threshold: SVD energy retention (0.9-0.99)\n- use_ties: Enable TIES trimming for sparsification\n- ties_density: Fraction to keep (0.1-0.5)\n- use_dare: Enable DARE drop-and-rescale\n\nSupported Architecture Pairs:\n- SDXL ↔ SD3\n- SDXL ↔ FLUX\n- SD1.x ↔ SD2.x\n- Any ComfyUI supported models\n\nMemory Tips:\n- Use 'cpu' offload for large models\n- Reduce rank for faster processing\n- Enable mixed precision for speed"
+      ],
+      "title": "Usage Guide"
+    },
+    {
+      "id": 12,
+      "type": "Note",
+      "pos": [750, 800],
+      "size": {"0": 500, "1": 200},
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "properties": {},
+      "widgets_values": [
+        "=== Python API Usage ===\n\nfrom custom_nodes.ComfyUI_distillation import (\n    create_distillation_engine,\n    DistillationConfig,\n    GPUAcceleratedSVD,\n    apply_dare,\n    apply_ties,\n)\n\n# Quick usage\nengine = create_distillation_engine(\n    rank=64,\n    svd_mode='aurora',\n    use_ties=True,\n)\n\nresult = engine.distill_models(\n    teacher_state_dict,\n    student_state_dict,\n)\n\nengine.save_lora_adapter(result, 'output_lora')"
+      ],
+      "title": "Python API Example"
+    }
+  ],
+  "links": [
+    [1, 1, 0, 3, 0, "MODEL"],
+    [2, 1, 1, 3, 0, "ARCH_INFO"],
+    [3, 2, 0, 4, 0, "MODEL"],
+    [4, 2, 1, 4, 0, "ARCH_INFO"],
+    [5, 3, 0, 5, 2, "ARCH_INFO"],
+    [6, 3, 1, 0, 0, "STRING"],
+    [7, 4, 0, 5, 3, "ARCH_INFO"],
+    [8, 4, 1, 0, 0, "STRING"],
+    [9, 5, 0, 6, 0, "MODEL"],
+    [10, 5, 1, 0, 0, "LORA"],
+    [11, 5, 2, 0, 0, "STRING"],
+    [12, 6, 0, 0, 0, "LORA"]
+  ],
+  "groups": [
+    {
+      "title": "Basic Distillation Workflow",
+      "bounding": [80, 50, 1550, 470],
+      "color": "#3f789e"
+    },
+    {
+      "title": "Advanced Distillation Options",
+      "bounding": [80, 520, 1700, 280],
+      "color": "#8A8"
+    },
+    {
+      "title": "Documentation",
+      "bounding": [80, 780, 1200, 350],
+      "color": "#88A"
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.8,
+      "offset": [50, 50]
+    }
+  },
+  "version": 0.4
+}
